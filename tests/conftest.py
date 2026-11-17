@@ -1,3 +1,5 @@
+import zlib
+
 import cv2
 import numpy as np
 import pytest
@@ -24,7 +26,8 @@ def fake_frame(cfg: ScreenConfig, elixir: float = 5.0, cards=None) -> np.ndarray
 def card_image(name: str, size) -> np.ndarray:
     """Deterministic distinct pattern per card name."""
     w, h = size
-    rng = np.random.default_rng(abs(hash(name)) % 2**32)
+    # zlib.crc32, not hash(): str hashes are randomised per process.
+    rng = np.random.default_rng(zlib.crc32(name.encode()))
     img = np.zeros((h, w, 3), np.uint8)
     for _ in range(6):
         c = tuple(int(v) for v in rng.integers(0, 255, 3))
