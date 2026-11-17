@@ -39,6 +39,7 @@ class GameState:
     units: list[Unit]
     tower_hp: dict[str, float | None]
     towers_alive: dict[int, int] = field(default_factory=dict)  # side -> count
+    next_card: str | None = None
 
     def ally(self) -> list[Unit]:
         return [u for u in self.units if u.side == SIDE_ALLY and u.cls not in TOWER_CLASSES]
@@ -172,9 +173,11 @@ class Perceiver:
         for u in units:
             if u.cls in TOWER_CLASSES and u.side in alive:
                 alive[u.side] += 1
+        next_card = None
         if self.cards:
-            preds = self.cards.predict([crop(frame, b) for b in self.cfg.cards])
-            hand, conf = [p[0] for p in preds], [p[1] for p in preds]
+            preds = self.cards.predict([crop(frame, b) for b in [*self.cfg.cards, self.cfg.next_card]])
+            hand, conf = [p[0] for p in preds[:4]], [p[1] for p in preds[:4]]
+            next_card = preds[4][0]
         else:
             hand, conf = [EMPTY_CARD] * 4, [0.0] * 4
         st = GameState(
@@ -184,6 +187,7 @@ class Perceiver:
             hand=hand, hand_conf=conf, units=units,
             tower_hp=read_tower_hp(frame, self.cfg),
             towers_alive=alive if any(alive.values()) else {},
+            next_card=next_card,
         )
         self.frame_idx += 1
         return st

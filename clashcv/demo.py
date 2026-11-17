@@ -22,8 +22,10 @@ from .regions import to_pixels
 W, H = 1080, 2400
 ARENA_SIZE = (576, 896)  # generator canvas (w, h)
 ELIXIR_BGR = (220, 40, 200)
-DEMO_HANDS = [["hog-rider", "musketeer", "cannon", "ice-golem"],
-              ["fireball", "musketeer", "cannon", "ice-golem"]]
+# (hand, next card) before and after the knight is played at PLAY_FRAME.
+DEMO_HANDS = [(["knight", "musketeer", "cannon", "ice-golem"], "fireball"),
+              (["fireball", "musketeer", "cannon", "ice-golem"], "knight")]
+PLAY_FRAME, PLAY_COST = 150, 3
 SPRITES = {  # class -> (BGR colour, (w, h) at ARENA_SIZE scale)
     "knight": ((200, 50, 50), (40, 60)),
     "archer": ((50, 200, 50), (30, 50)),
@@ -54,7 +56,7 @@ def card_image(name: str, size) -> np.ndarray:
     return img
 
 
-def fake_frame(cfg: ScreenConfig, elixir: float = 5.0, cards=None) -> np.ndarray:
+def fake_frame(cfg: ScreenConfig, elixir: float = 5.0, cards=None, next_card: str | None = None) -> np.ndarray:
     """Blank 1080x2400 phone frame with an elixir bar and hand cards."""
     img = np.full((H, W, 3), BG_BGR, np.uint8)
     x0, y0, x1, y1 = to_pixels(cfg.elixir_bar, W, H)
@@ -63,6 +65,11 @@ def fake_frame(cfg: ScreenConfig, elixir: float = 5.0, cards=None) -> np.ndarray
     for b, card in zip(cfg.cards, cards or []):
         cx0, cy0, cx1, cy1 = to_pixels(b, W, H)
         img[cy0:cy1, cx0:cx1] = card_image(card, (cx1 - cx0, cy1 - cy0))
+    if next_card:
+        nx0, ny0, nx1, ny1 = to_pixels(cfg.next_card, W, H)
+        # Rendered at hand-card size then shrunk, as in the game.
+        cx0, cy0, cx1, cy1 = to_pixels(cfg.cards[0], W, H)
+        img[ny0:ny1, nx0:nx1] = cv2.resize(card_image(next_card, (cx1 - cx0, cy1 - cy0)), (nx1 - nx0, ny1 - ny0))
     return img
 
 
@@ -81,7 +88,7 @@ def make_assets(out: Path, cfg: ScreenConfig) -> None:
     cv2.imwrite(str(out / "backgrounds" / "0.png"), np.full((ARENA_SIZE[1], ARENA_SIZE[0], 3), BG_BGR, np.uint8))
     (out / "cards").mkdir(parents=True, exist_ok=True)
     x0, y0, x1, y1 = to_pixels(cfg.cards[0], W, H)
-    for n in {c for hand in DEMO_HANDS for c in hand}:
+    for n in {c for hand, nxt in DEMO_HANDS for c in [*hand, nxt]}:
         cv2.imwrite(str(out / "cards" / f"{n}.png"), card_image(n, (x1 - x0, y1 - y0)))
 
 
@@ -92,8 +99,13 @@ def render_video(path: Path, cfg: ScreenConfig, n_frames: int = 450, fps: int = 
     spr = {n: cv2.resize(sprite(c, sz), (int(sz[0] * sx), int(sz[1] * sy))) for n, (c, sz) in SPRITES.items()}
     vw = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
     for t in range(n_frames):
-        f = fake_frame(cfg, (t / fps * 0.7) % 10, DEMO_HANDS[(t // 150) % 2])
+        played = t >= PLAY_FRAME
+        elixir = min(10.0, 4.0 + t / fps * 0.7 - (PLAY_COST if played else 0))
+        hand, nxt = DEMO_HANDS[played]
+        f = fake_frame(cfg, elixir, hand, nxt)
         ar = f[ay0:ay1, ax0:ax1]
+        if t >= PLAY_FRAME + 3:  # the played knight spawns at our bridge and walks up
+            _paste(ar, spr["knight"], AW * 0.27, AH * (0.80 - 0.0015 * (t - PLAY_FRAME)))
         _paste(ar, spr["king-tower"], AW * 0.5, AH * 0.16)
         _paste(ar, spr["king-tower"], AW * 0.5, AH * 0.95)
         for k in range(3):  # knights march down, archers march up

@@ -116,10 +116,11 @@ def _perceiver(a, cfg):
 
 def cmd_run(a):
     from .capture import open_source
-    from .visualize import draw_state
+    from .visualize import Renderer
 
     cfg = _cfg(a)
     per = _perceiver(a, cfg)
+    renderer = Renderer(cfg, height=a.height, layout=a.layout)
     agent = ctrl = None
     if a.play:
         from .policy import AdbController, RuleAgent
@@ -140,14 +141,15 @@ def cmd_run(a):
                 print(f"[{st.frame_idx}] agent: slot {move[0]} ({st.hand[move[0]]}) -> tile {move[1]}")
                 ctrl.play(*move)
         if a.show or a.save:
-            vis = draw_state(frame, st, actions, r)
+            vis = renderer.render(frame, st, actions, r)
             if a.save:
                 if writer is None:
                     writer = cv2.VideoWriter(a.save, cv2.VideoWriter_fourcc(*"mp4v"), a.fps,
                                              (vis.shape[1], vis.shape[0]))
                 writer.write(vis)
             if a.show:
-                cv2.imshow("clashcv", cv2.resize(vis, None, fx=a.view_scale, fy=a.view_scale))
+                cv2.imshow("clashcv", vis if a.view_scale == 1 else
+                           cv2.resize(vis, None, fx=a.view_scale, fy=a.view_scale))
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
         n += 1
@@ -156,6 +158,18 @@ def cmd_run(a):
                   f"units {len(st.units)}  hand {st.hand}")
     if writer:
         writer.release()
+        print(f"saved labelled video to {a.save}")
+
+
+def cmd_annotate(a):
+    """Video in -> labelled video out (same as `run --save`, with the source's fps)."""
+    cap = cv2.VideoCapture(a.video)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    cap.release()
+    a.source, a.save, a.fps = a.video, a.out, fps / max(1, a.stride)
+    a.play = a.dry_run = False
+    a.serial = None
+    cmd_run(a)
 
 
 def cmd_build_episode(a):
@@ -187,16 +201,15 @@ def cmd_demo(a):
     p = build(a.out, epochs=a.epochs, device=a.device, rebuild=a.rebuild)
     show = not a.no_show and (sys.platform != "linux" or os.environ.get("DISPLAY")
                               or os.environ.get("WAYLAND_DISPLAY"))
-    save = str(Path(a.out) / "demo_overlay.mp4") if not show else None
+    save = str(Path(a.out) / "demo_labelled.mp4")
     args = ["run", str(p["video"]), "--weights", str(p["weights"]), "--cards", str(p["cards"]),
-            "--view-scale", str(a.view_scale)]
+            "--layout", a.layout, "--save", save]
     if a.device:
         args += ["--device", a.device]
-    args += ["--show"] if show else ["--save", save]
+    if show:
+        args += ["--show"]
     print("[demo] running perception" + (" - press q in the window to quit" if show else ""))
     main(args)
-    if save:
-        print(f"[demo] no display found; wrote overlay video to {save}")
 
 
 def main(argv=None):
@@ -259,10 +272,21 @@ def main(argv=None):
     s.add_argument("source", help="video, folder, /dev/videoN, camera idx, adb[:serial], screen:x,y,w,h")
     perception_args(s)
     s.add_argument("--show", action="store_true"); s.add_argument("--save", help="write overlay mp4")
-    s.add_argument("--fps", type=float, default=30); s.add_argument("--view-scale", type=float, default=0.4)
+    s.add_argument("--fps", type=float, default=30); s.add_argument("--view-scale", type=float, default=1.0)
+    s.add_argument("--layout", choices=["overlay", "panels"], default="overlay",
+                   help="panels = KataCR eval view: raw | labelled | state grid")
+    s.add_argument("--height", type=int, default=960, help="output height in pixels")
     s.add_argument("--play", action="store_true", help="let the rule agent play via adb")
     s.add_argument("--dry-run", action="store_true", help="agent decides but doesn't tap")
     s.add_argument("--serial")
+
+    s = add("annotate", cmd_annotate, "label a recorded match: boxes, card names, elixir -> new mp4")
+    s.add_argument("video"); s.add_argument("out", nargs="?", default="annotated.mp4")
+    perception_args(s)
+    s.add_argument("--layout", choices=["overlay", "panels"], default="overlay")
+    s.add_argument("--height", type=int, default=960)
+    s.add_argument("--show", action="store_true", help="also preview while rendering")
+    s.add_argument("--view-scale", type=float, default=1.0)
 
     s = add("build-episode", cmd_build_episode, "replay video -> offline SAR episode (.npz)")
     s.add_argument("video"); s.add_argument("out"); perception_args(s)
@@ -279,8 +303,8 @@ def main(argv=None):
     s.add_argument("--epochs", type=int, default=20)
     s.add_argument("--device", default=None, help="e.g. cpu, 0 (GPU), mps")
     s.add_argument("--rebuild", action="store_true", help="delete the cache and rebuild")
-    s.add_argument("--no-show", action="store_true", help="save an overlay mp4 instead of a window")
-    s.add_argument("--view-scale", type=float, default=0.4)
+    s.add_argument("--no-show", action="store_true", help="don't open a window (video is still saved)")
+    s.add_argument("--layout", choices=["overlay", "panels"], default="panels")
 
     a = p.parse_args(argv)
     a.fn(a)

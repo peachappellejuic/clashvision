@@ -102,3 +102,16 @@ def test_state_arrays(cfg):
     arr = st.to_arrays(["archer", "knight"])
     assert arr["cls_map"][20, 9] == 2 and arr["side_map"][20, 9] == 1
     assert arr["scalars"][0] == pytest.approx(0.4, abs=0.03)
+
+
+def test_renderer_layouts(cfg):
+    from clashcv.perception.sar import Action
+    from clashcv.visualize import Renderer
+
+    per = Perceiver(cfg)
+    st = per.state(fake_frame(cfg, 6), [Detection((100, 600, 160, 700), 0.9, "knight", SIDE_ENEMY)])
+    act = Action(0, "knight", 0, (4, 20))
+    over = Renderer(cfg, height=960).render(fake_frame(cfg, 6), st, [act], 0.5)
+    assert over.shape == (960, 432, 3)
+    panels = Renderer(cfg, height=960, layout="panels").render(fake_frame(cfg, 6), st, [act], 0.5)
+    assert panels.shape[0] == 960 and panels.shape[1] == 432 * 2 + 18 * (960 // 32)

@@ -51,6 +51,27 @@ window. Press `q` to quit. Everything is cached in `runs/demo/`, so later runs
 start immediately. Use `--rebuild` to start over. Without a display, it writes
 `runs/demo/demo_overlay.mp4` instead.
 
+## Labelled video (KataCR-style overlay)
+
+```bash
+python -m clashcv annotate match.mp4 labelled.mp4 --weights best.pt --cards weights/cards.pt
+python -m clashcv annotate match.mp4 labelled.mp4 --weights best.pt --cards weights/cards.pt --layout panels
+```
+
+- **Units:** boxes in a colour per class, labelled `<class><side> <track-id> <conf>`,
+  e.g. `knight0 4 0.97`. Side 0 is ally and 1 is enemy, as in KataCR.
+- **Hand cards:** each slot is boxed with the card name on top and
+  `<cost>e <confidence>` underneath. Green means you can afford it, red means
+  you can't. The next card is boxed as well.
+- **HUD:** Reward, Frame, Time and Elixir, plus a `PLAY <card> @ (x,y)` callout
+  whenever you deploy a card.
+- **`--layout panels`:** KataCR's eval view. The raw screen, the labelled
+  screen and the 18×32 state grid sit side by side, and the tile of each played
+  card is highlighted.
+
+`run` takes the same `--layout` and `--height` options for live viewing
+(`--show`).
+
 ## Workflow
 
 No game art ships with this repo. Record your own gameplay and build the assets
