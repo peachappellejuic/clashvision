@@ -38,6 +38,19 @@ pip install -r requirements.txt
 pytest            # 20 tests, all procedural (no game assets needed)
 ```
 
+## Quick demo (no game files needed)
+
+```bash
+python -m clashcv demo
+```
+
+The first run draws fake sprites and cards and generates a synthetic dataset.
+It fine-tunes YOLOv8n (about 6 minutes on a laptop CPU, faster on a GPU),
+renders an animated phone-screen video, then runs the full pipeline in a
+window. Press `q` to quit. Everything is cached in `runs/demo/`, so later runs
+start immediately. Use `--rebuild` to start over. Without a display, it writes
+`runs/demo/demo_overlay.mp4` instead.
+
 ## Workflow
 
 No game art ships with this repo. Record your own gameplay and build the assets

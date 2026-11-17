@@ -178,6 +178,27 @@ def cmd_train_policy(a):
     print(f"saved {a.out}")
 
 
+def cmd_demo(a):
+    import os
+    import sys
+
+    from .demo import build
+
+    p = build(a.out, epochs=a.epochs, device=a.device, rebuild=a.rebuild)
+    show = not a.no_show and (sys.platform != "linux" or os.environ.get("DISPLAY")
+                              or os.environ.get("WAYLAND_DISPLAY"))
+    save = str(Path(a.out) / "demo_overlay.mp4") if not show else None
+    args = ["run", str(p["video"]), "--weights", str(p["weights"]), "--cards", str(p["cards"]),
+            "--view-scale", str(a.view_scale)]
+    if a.device:
+        args += ["--device", a.device]
+    args += ["--show"] if show else ["--save", save]
+    print("[demo] running perception" + (" - press q in the window to quit" if show else ""))
+    main(args)
+    if save:
+        print(f"[demo] no display found; wrote overlay video to {save}")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="clashcv", description="Clash Royale computer vision toolkit")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -252,6 +273,14 @@ def main(argv=None):
     s.add_argument("--classes"); s.add_argument("--steps", type=int, default=2000)
     s.add_argument("--batch", type=int, default=16); s.add_argument("--context", type=int, default=30)
     s.add_argument("--device", default="cpu")
+
+    s = add("demo", cmd_demo, "self-contained demo: builds fake assets, trains, and runs (no game files needed)")
+    s.add_argument("--out", default="runs/demo", help="cache folder (reused on later runs)")
+    s.add_argument("--epochs", type=int, default=20)
+    s.add_argument("--device", default=None, help="e.g. cpu, 0 (GPU), mps")
+    s.add_argument("--rebuild", action="store_true", help="delete the cache and rebuild")
+    s.add_argument("--no-show", action="store_true", help="save an overlay mp4 instead of a window")
+    s.add_argument("--view-scale", type=float, default=0.4)
 
     a = p.parse_args(argv)
     a.fn(a)
