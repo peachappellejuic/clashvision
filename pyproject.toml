@@ -1,0 +1,21 @@
+[project]
+name = "clashcv"
+version = "0.1.0"
+description = "KataCR-style computer vision stack for Clash Royale"
+requires-python = ">=3.10"
+dependencies = ["numpy", "opencv-python", "pyyaml"]
+
+[project.optional-dependencies]
+ml = ["torch", "torchvision", "ultralytics"]
+ocr = ["easyocr"]
+capture = ["mss"]
+
+[project.scripts]
+clashcv = "clashcv.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["clashcv*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
