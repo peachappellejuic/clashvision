@@ -1,6 +1,7 @@
 """Cropping helpers and pixel <-> tile coordinate conversion."""
 from __future__ import annotations
 
+import cv2
 import numpy as np
 
 from .config import Box, ScreenConfig
@@ -46,3 +47,18 @@ class Grid:
 
     def clamp_tile(self, tx: float, ty: float) -> tuple[int, int]:
         return int(np.clip(tx, 0, self.cols - 1)), int(np.clip(ty, 0, self.rows - 1))
+
+
+def find_screen(frame: np.ndarray, thresh: int = 18) -> tuple[int, int, int, int] | None:
+    """Bounding box (x, y, w, h) of the non-black content, e.g. a portrait phone
+    recording inside a landscape video with black bars. None if no bars."""
+    g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    cols = np.flatnonzero(g.mean(axis=0) > thresh)
+    rows = np.flatnonzero(g.mean(axis=1) > thresh)
+    if len(cols) == 0 or len(rows) == 0:
+        return None
+    x0, x1, y0, y1 = cols[0], cols[-1] + 1, rows[0], rows[-1] + 1
+    h, w = g.shape
+    if (x1 - x0) > 0.97 * w and (y1 - y0) > 0.97 * h:
+        return None
+    return int(x0), int(y0), int(x1 - x0), int(y1 - y0)

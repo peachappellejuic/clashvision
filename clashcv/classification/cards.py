@@ -97,7 +97,7 @@ def train_resnet(data_dir: str | Path, out: str | Path, epochs: int = 15, batch:
     from torch.utils.data import DataLoader, Dataset, random_split
 
     root = Path(data_dir)
-    classes = sorted(d.name for d in root.iterdir() if d.is_dir())
+    classes = sorted(d.name for d in root.iterdir() if d.is_dir() and not d.name.startswith(("_", ".")))
     items = [(p, i) for i, c in enumerate(classes) for p in sorted((root / c).iterdir())
              if p.suffix.lower() in _IMG_EXTS]
     if not items:

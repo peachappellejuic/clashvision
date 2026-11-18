@@ -80,6 +80,12 @@ def cmd_generate(a):
     print(f"dataset written: {y}")
 
 
+def cmd_prepare_katacr(a):
+    from .katacr_data import prepare
+
+    prepare(a.dataset, a.out, n_synth=a.n_synth, n_synth_val=a.n_synth_val)
+
+
 def cmd_train_det(a):
     from ultralytics import YOLO
 
@@ -114,6 +120,15 @@ def _perceiver(a, cfg):
     return Perceiver(cfg, det, cards, ocr=TimerOCR() if a.ocr else None)
 
 
+def _auto_crop(frame):
+    from .regions import find_screen
+
+    box = find_screen(frame)
+    if box is None and frame.shape[1] > frame.shape[0]:
+        print("warning: landscape video without black bars - pass --crop x,y,w,h for the phone screen")
+    return box
+
+
 def cmd_run(a):
     from .capture import open_source
     from .visualize import Renderer
@@ -128,7 +143,19 @@ def cmd_run(a):
         agent = RuleAgent()
     writer = None
     t0, n = time.time(), 0
+    crop_box = tuple(map(int, a.crop.split(","))) if getattr(a, "crop", None) else None
     for frame in open_source(a.source, a.stride):
+        if n == 0:
+            crop_box = crop_box or _auto_crop(frame)
+            if crop_box:
+                print(f"cropping to phone screen x,y,w,h = {','.join(map(str, crop_box))}")
+        if crop_box:
+            x, y, w, h = crop_box
+            frame = frame[y:y + h, x:x + w]
+        if n == 0 and not a.config:
+            ratio = cfg.apply_aspect(frame.shape[1], frame.shape[0])
+            print(f"screen {frame.shape[1]}x{frame.shape[0]} (h/w {frame.shape[0] / frame.shape[1]:.2f})"
+                  f" -> using {ratio} layout preset; pass --config to override")
         st, actions, r = per.step(frame)
         for act in actions:
             print(f"[{st.frame_idx}] played {act.card} (slot {act.slot}) at tile {act.tile}")
@@ -230,6 +257,7 @@ def main(argv=None):
         s.add_argument("--imgsz", type=int, default=640)
         s.add_argument("--device", default=None)
         s.add_argument("--stride", type=int, default=1, help="use every Nth frame")
+        s.add_argument("--crop", help="x,y,w,h of the phone screen inside the video (default: auto)")
 
     s = add("calibrate", cmd_calibrate, "draw screen regions/grid on a screenshot")
     s.add_argument("frame"); s.add_argument("--out", default="calibration.png")
@@ -256,6 +284,12 @@ def main(argv=None):
     s.add_argument("--scale", type=float, default=1.0, help="sprite scale vs. background")
     s.add_argument("--min-units", type=int, default=4); s.add_argument("--max-units", type=int, default=25)
     s.add_argument("--seed", type=int, default=None)
+
+    s = add("prepare-katacr", cmd_prepare_katacr, "build a YOLO dataset from KataCR's public dataset")
+    s.add_argument("dataset", help="clone of github.com/wty-yy/Clash-Royale-Detection-Dataset")
+    s.add_argument("--out", default="data/cr")
+    s.add_argument("--n-synth", type=int, default=4000, help="synthetic training images to add")
+    s.add_argument("--n-synth-val", type=int, default=200)
 
     s = add("train-det", cmd_train_det, "train a YOLOv8 detector")
     s.add_argument("data"); s.add_argument("--model", default="yolov8s.pt")

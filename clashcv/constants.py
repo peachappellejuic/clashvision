@@ -38,3 +38,37 @@ SIDE_ALLY, SIDE_ENEMY, SIDE_UNKNOWN = 0, 1, -1
 
 def units_for_card(card: str) -> list[str]:
     return CARD_TO_UNITS.get(card, [card])
+
+
+# KataCR's detection label list (katacr/constants/label_list.py), in index order.
+# Detector classes are these names with a side digit appended: "knight0" = ally,
+# "knight1" = enemy (KataCR's "belong" convention).
+KATACR_CLASSES: list[str] = """
+king-tower queen-tower cannoneer-tower dagger-duchess-tower dagger-duchess-tower-bar tower-bar
+king-tower-bar bar bar-level clock emote text elixir selected skeleton-king-bar skeleton
+skeleton-evolution electro-spirit fire-spirit ice-spirit heal-spirit goblin spear-goblin bomber bat
+bat-evolution zap giant-snowball ice-golem barbarian-barrel barbarian barbarian-evolution
+wall-breaker rage the-log archer arrows knight knight-evolution minion cannon skeleton-barrel
+firecracker firecracker-evolution royal-delivery royal-recruit royal-recruit-evolution tombstone
+mega-minion dart-goblin earthquake elixir-golem-big elixir-golem-mid elixir-golem-small
+goblin-barrel guard clone tornado miner dirt princess ice-wizard royal-ghost bandit fisherman
+skeleton-dragon mortar mortar-evolution tesla fireball mini-pekka musketeer goblin-cage
+goblin-brawler valkyrie battle-ram battle-ram-evolution bomb-tower bomb flying-machine hog-rider
+battle-healer furnace zappy baby-dragon dark-prince freeze poison hunter goblin-drill
+electro-wizard inferno-dragon phoenix-big phoenix-egg phoenix-small magic-archer lumberjack
+night-witch mother-witch hog golden-knight skeleton-king mighty-miner rascal-boy rascal-girl giant
+goblin-hut inferno-tower wizard royal-hog witch balloon prince electro-dragon bowler executioner
+axe cannon-cart ram-rider graveyard archer-queen monk royal-giant royal-giant-evolution
+elite-barbarian rocket barbarian-hut elixir-collector giant-skeleton lightning goblin-giant x-bow
+sparky pekka electro-giant mega-knight lava-hound lava-pup golem golemite little-prince
+royal-guardian archer-evolution ice-spirit-evolution valkyrie-evolution bomber-evolution
+wall-breaker-evolution evolution-symbol mirror tesla-evolution goblin-ball skeleton-king-skill
+tesla-evolution-shock ice-spirit-evolution-symbol zap-evolution
+""".split()
+
+
+def split_side(name: str) -> tuple[str, int]:
+    """'knight1' -> ('knight', SIDE_ENEMY); names without a side digit -> SIDE_UNKNOWN."""
+    if name and name[-1] in "01" and len(name) > 1:
+        return name[:-1], int(name[-1])
+    return name, SIDE_UNKNOWN

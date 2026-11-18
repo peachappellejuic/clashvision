@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from ..config import ScreenConfig
+from ..constants import SIDE_UNKNOWN, split_side
 from ..regions import to_pixels
 from .side import infer_side
 from .types import Detection, nms
@@ -35,8 +36,11 @@ class YoloDetector:
         conf = res.boxes.conf.cpu().numpy()
         cls = res.boxes.cls.cpu().numpy().astype(int)
         ox, oy = offset
-        return [Detection((b[0] + ox, b[1] + oy, b[2] + ox, b[3] + oy), float(c), self.names[k])
-                for b, c, k in zip(xyxy, conf, cls)]
+        out = []
+        for b, c, k in zip(xyxy, conf, cls):
+            name, side = split_side(self.names[k])  # "knight1" -> knight, enemy
+            out.append(Detection((b[0] + ox, b[1] + oy, b[2] + ox, b[3] + oy), float(c), name, side))
+        return out
 
 
 class ComboDetector:
@@ -62,5 +66,6 @@ class ComboDetector:
         dets = nms(dets, self.merge_iou) if len(self.detectors) > 1 else dets
         if self.assign_sides:
             for d in dets:
-                d.side = infer_side(frame, d, h)
+                if d.side == SIDE_UNKNOWN:  # model wasn't trained with side-tagged classes
+                    d.side = infer_side(frame, d, h)
         return dets

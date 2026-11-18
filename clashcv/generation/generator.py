@@ -19,14 +19,15 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from ..constants import TOWER_CLASSES
+from ..constants import SIDE_UNKNOWN, TOWER_CLASSES, split_side
 
 _IMG_EXTS = {".png", ".webp"}
 
-# Relative (x, y) of tower *foot* points inside the arena crop.
+# Relative (x, y) of tower *foot* points inside the arena crop, with the side
+# that owns them (1 = enemy at the top, 0 = ally at the bottom).
 TOWER_SLOTS = {
-    "king": [(0.5, 0.16), (0.5, 0.95)],
-    "queen": [(0.22, 0.27), (0.78, 0.27), (0.22, 0.83), (0.78, 0.83)],
+    "king": [((0.5, 0.16), 1), ((0.5, 0.95), 0)],
+    "queen": [((0.22, 0.27), 1), ((0.78, 0.27), 1), ((0.22, 0.83), 0), ((0.78, 0.83), 0)],
 }
 
 
@@ -92,14 +93,27 @@ class SyntheticGenerator:
     def __init__(self, segments: dict[str, list[np.ndarray]], backgrounds: list[np.ndarray],
                  class_names: list[str] | None = None, size: tuple[int, int] = (576, 896),
                  sprite_scale: float = 1.0, units_range: tuple[int, int] = (4, 25),
-                 min_visible: float = 0.35, seed: int | None = None):
+                 min_visible: float = 0.35, seed: int | None = None,
+                 distractors: list[np.ndarray] | None = None, distractor_range: tuple[int, int] = (0, 4)):
+        """Class names may carry a side digit ("king-tower1"): towers are then
+        placed on that side's slots. `distractors` are RGBA decorations pasted
+        unlabelled under everything else."""
         self.segments, self.backgrounds = segments, backgrounds
+        self.distractors, self.distractor_range = distractors or [], distractor_range
         self.names = class_names or sorted(segments)
         self.ids = {c: i for i, c in enumerate(self.names)}
         self.size, self.sprite_scale = size, sprite_scale
         self.units_range, self.min_visible = units_range, min_visible
         self.rng = random.Random(seed)
-        self.unit_classes = [c for c in segments if c not in TOWER_CLASSES and c in self.ids]
+        usable = [c for c in segments if c in self.ids]
+        self.unit_classes = [c for c in usable if split_side(c)[0] not in TOWER_CLASSES]
+        self.towers: dict[tuple[str, int], list[str]] = {}
+        for c in usable:
+            base, side = split_side(c)
+            if base in TOWER_CLASSES:
+                kind = "king" if base == "king-tower" else "queen"
+                for sd in ((0, 1) if side == SIDE_UNKNOWN else (side,)):
+                    self.towers.setdefault((kind, sd), []).append(c)
         if not self.unit_classes:
             raise ValueError("need at least one non-tower segment class")
 
@@ -115,15 +129,22 @@ class SyntheticGenerator:
         bg = cv2.resize(rng.choice(self.backgrounds), (W, H), interpolation=cv2.INTER_AREA)
         canvas = cv2.convertScaleAbs(bg, alpha=rng.uniform(0.9, 1.1), beta=rng.uniform(-10, 10))
 
+        for _ in range(rng.randint(*self.distractor_range) if self.distractors else 0):
+            d = _augment_sprite(rng.choice(self.distractors), rng, self.sprite_scale)
+            dh, dw = d.shape[:2]
+            x, y = int(rng.uniform(0, W) - dw / 2), int(rng.uniform(0, H) - dh / 2)
+            x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + dw, W), min(y + dh, H)
+            if x1 > x0 and y1 > y0:
+                sub = d[y0 - y:y1 - y, x0 - x:x1 - x]
+                a = sub[..., 3:4].astype(np.float32) / 255.0
+                canvas[y0:y1, x0:x1] = (sub[..., :3] * a + canvas[y0:y1, x0:x1] * (1 - a)).astype(np.uint8)
+
         objs: list[Placed] = []
-        kings = [c for c in ("king-tower",) if c in self.segments and c in self.ids]
-        queens = [c for c in TOWER_CLASSES if c != "king-tower" and c in self.segments and c in self.ids]
-        for slot in TOWER_SLOTS["king"] if kings else []:
-            if rng.random() < 0.9:
-                objs.append(self._place(kings[0], slot))
-        for slot in TOWER_SLOTS["queen"] if queens else []:
-            if rng.random() < 0.8:
-                objs.append(self._place(rng.choice(queens), slot))
+        for kind, p_present in (("king", 0.9), ("queen", 0.8)):
+            for slot, side in TOWER_SLOTS[kind]:
+                choices = self.towers.get((kind, side))
+                if choices and rng.random() < p_present:
+                    objs.append(self._place(rng.choice(choices), slot))
         for _ in range(rng.randint(*self.units_range)):
             cls = rng.choice(self.unit_classes)  # class-balanced sampling
             objs.append(self._place(cls, (rng.uniform(0.04, 0.96), rng.uniform(0.06, 0.98))))
