@@ -8,6 +8,7 @@ ELIXIR_COST: dict[str, int] = {
     # Classic "2.6 Hog Cycle" deck (the deck KataCR's agent plays)
     "hog-rider": 4, "musketeer": 4, "cannon": 3, "ice-golem": 2,
     "skeletons": 1, "ice-spirit": 1, "fireball": 4, "the-log": 2,
+    "skeletons-evolution": 1, "ice-spirit-evolution": 1,
     # Common extras
     "knight": 3, "archers": 3, "giant": 5, "mini-pekka": 4, "valkyrie": 4,
     "baby-dragon": 4, "wizard": 5, "goblins": 2, "spear-goblins": 2,
@@ -21,7 +22,8 @@ EMPTY_CARD = "empty"  # hand slot while a card is cycling in
 
 # Card -> unit classes it spawns on the arena (used to localise played cards).
 CARD_TO_UNITS: dict[str, list[str]] = {
-    "skeletons": ["skeleton"], "goblins": ["goblin"], "spear-goblins": ["spear-goblin"],
+    "skeletons": ["skeleton"], "skeletons-evolution": ["skeleton-evolution", "skeleton"],
+    "ice-spirit-evolution": ["ice-spirit-evolution", "ice-spirit"], "goblins": ["goblin"], "spear-goblins": ["spear-goblin"],
     "minions": ["minion"], "archers": ["archer"], "bats": ["bat"],
     "goblin-barrel": ["goblin", "goblin-barrel"],
     "fireball": ["fireball"], "the-log": ["the-log"], "arrows": ["arrows"], "zap": ["zap"],
