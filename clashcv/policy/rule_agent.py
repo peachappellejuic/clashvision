@@ -7,7 +7,7 @@ bridge of the lane with fewer enemies.
 """
 from __future__ import annotations
 
-from ..constants import ELIXIR_COST, EMPTY_CARD, SPELL_CLASSES
+from ..constants import ELIXIR_COST, EMPTY_CARD, SPELL_CARDS
 from ..perception.sar import GameState
 
 RIVER_ROW = 15.5  # rows 0-14 enemy half, 17-31 our half (18x32 grid)
@@ -24,7 +24,7 @@ class RuleAgent:
         for i, c in enumerate(st.hand):
             if c == EMPTY_CARD or c not in ELIXIR_COST or ELIXIR_COST[c] > st.elixir:
                 continue
-            if troops_only and c in SPELL_CLASSES:
+            if troops_only and c in SPELL_CARDS:
                 continue
             out.append((i, c))
         return out

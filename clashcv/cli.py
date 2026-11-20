@@ -96,6 +96,13 @@ def cmd_train_det(a):
                 fliplr=0.5, flipud=0.0, hsv_h=0.0, hsv_s=0.3, hsv_v=0.3, mosaic=0.5, degrees=0.0)
 
 
+def cmd_synth_cards(a):
+    from .classification.synth_cards import generate
+
+    classes = generate(a.art, a.out, per_class=a.per_class, real_dir=a.real, seed=a.seed)
+    print(f"wrote {len(classes)} classes to {a.out}")
+
+
 def cmd_train_cls(a):
     from .classification import train_resnet
 
@@ -296,6 +303,12 @@ def main(argv=None):
     s.add_argument("--epochs", type=int, default=100); s.add_argument("--imgsz", type=int, default=640)
     s.add_argument("--batch", type=int, default=16); s.add_argument("--device", default=None)
     s.add_argument("--project", default="runs/detect"); s.add_argument("--name", default="clash")
+
+    s = add("synth-cards", cmd_synth_cards, "synthesise hand-card crops for every card from card art")
+    s.add_argument("--art", default="assets/card_art", help="folder of <card>.png RGBA card art")
+    s.add_argument("--out", default="data/cards_full")
+    s.add_argument("--real", default="data/cards", help="ImageFolder of real crops to merge in ('' = none)")
+    s.add_argument("--per-class", type=int, default=60); s.add_argument("--seed", type=int, default=0)
 
     s = add("train-cls", cmd_train_cls, "train the ResNet hand-card classifier")
     s.add_argument("data"); s.add_argument("--out", default="weights/cards.pt")

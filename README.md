@@ -116,6 +116,13 @@ python -m clashcv extract-cards match.mp4 data/cards_raw --every 15
 # sort crops into data/cards/<card-name>/ (include an "empty" class)
 python -m clashcv train-cls data/cards --out weights/cards.pt
 ```
+To recognise **every** card (not just the ones you've recorded), synthesise
+hand crops from card art (`assets/card_art/<card>.png`, RGBA) and merge your
+real crops in:
+```bash
+python -m clashcv synth-cards --art assets/card_art --real data/cards --out data/cards_full
+python -m clashcv train-cls data/cards_full --out weights/cards.pt --epochs 10 --batch 64
+```
 To skip training, pass `--cards templates/`, a folder holding one
 `<card-name>.png` per card.
 
