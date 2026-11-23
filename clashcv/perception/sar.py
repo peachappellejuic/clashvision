@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import cv2
 import numpy as np
 
 from ..config import ScreenConfig
@@ -154,12 +155,41 @@ class Perceiver:
         self.actions = ActionDetector()
         self.reward = RewardTracker()
         self.frame_idx = 0
+        self._card_thumbs: list[np.ndarray | None] = []
+        self._card_preds: list[tuple[str, float]] = []
+        self._card_age = 0
 
     def reset(self) -> None:
         self.tracker.reset()
         self.actions = ActionDetector()
         self.reward = RewardTracker()
         self.frame_idx = 0
+        self._card_thumbs, self._card_preds, self._card_age = [], [], 0
+
+    # A slot is re-classified only when its crop visibly changes (card played, or
+    # greyed out / back to affordable). Cards are static otherwise, so this skips the
+    # classifier on almost every frame. Everything is refreshed every `CARD_REFRESH` frames.
+    CARD_DIFF = 6.0      # mean abs grey-level change of the 24x30 thumbnail
+    CARD_REFRESH = 60
+
+    def _classify_cards(self, crops: list[np.ndarray]) -> list[tuple[str, float]]:
+        thumbs = [cv2.resize(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY), (24, 30),
+                             interpolation=cv2.INTER_AREA).astype(np.float32) for c in crops]
+        self._card_age += 1
+        if len(self._card_preds) != len(crops) or self._card_age >= self.CARD_REFRESH:
+            changed = list(range(len(crops)))
+            self._card_age = 0
+        else:
+            changed = [i for i, (t, old) in enumerate(zip(thumbs, self._card_thumbs))
+                       if float(np.abs(t - old).mean()) > self.CARD_DIFF]
+        if changed:
+            preds = self.cards.predict([crops[i] for i in changed])
+            if len(self._card_preds) != len(crops):
+                self._card_preds = [("", 0.0)] * len(crops)
+                self._card_thumbs = [None] * len(crops)
+            for i, p in zip(changed, preds):
+                self._card_preds[i], self._card_thumbs[i] = p, thumbs[i]
+        return list(self._card_preds)
 
     def state(self, frame: np.ndarray, dets: list[Detection] | None = None) -> GameState:
         h, w = frame.shape[:2]
@@ -175,7 +205,7 @@ class Perceiver:
                 alive[u.side] += 1
         next_card = None
         if self.cards:
-            preds = self.cards.predict([crop(frame, b) for b in [*self.cfg.cards, self.cfg.next_card]])
+            preds = self._classify_cards([crop(frame, b) for b in [*self.cfg.cards, self.cfg.next_card]])
             hand, conf = [p[0] for p in preds[:4]], [p[1] for p in preds[:4]]
             next_card = preds[4][0]
         else:

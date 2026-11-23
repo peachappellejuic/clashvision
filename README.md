@@ -41,7 +41,7 @@ pytest            # 20 tests, all procedural (no game assets needed)
 ## Pretrained models (quickest start)
 
 ```bash
-python -m clashcv download-weights      # -> weights/best.pt, weights/cards.pt (~70 MB, checksummed)
+python -m clashcv download-weights      # -> weights/best.pt, cards.pt, best_int8_openvino_model/ (~80 MB, checksummed)
 python -m clashcv annotate match.mp4 labelled.mp4 --weights weights/best.pt --cards weights/cards.pt
 ```
 
@@ -54,6 +54,7 @@ repo is enough. Or download the two files from the Releases page and put them in
 | file | model | trained on | classes |
 |---|---|---|---|
 | `best.pt` | YOLOv8 arena detector | [KataCR dataset](https://github.com/wty-yy/Clash-Royale-Detection-Dataset) (~7k real frames) + synthetic, 100 epochs | 212 (≈106 units/towers/bars × ally/enemy). Val mAP50 0.973, mAP50-95 0.873 |
+| `best_int8_openvino_model/` | same detector, OpenVINO INT8, 640×416 input | calibrated on `data/cr` | 212. Val mAP50 0.936 vs 0.943 for `best.pt`, ~3.5× faster on CPU |
 | `cards.pt` | ResNet18 hand-card classifier | synthetic crops from card art + real crops of 11 cards | 178 (all 177 cards incl. evolutions + `empty`) |
 
 Limits: the detector only knows units in KataCR's dataset, so troops released
@@ -61,6 +62,28 @@ since then aren't detected. Most cards in the classifier were learned from
 card art only, so check them on your own footage. The defaults assume a
 1080×2400 screen; run `calibrate` (step 2 below) if yours is different. To
 train your own models, follow the Workflow section.
+
+## Speed (live play)
+
+Use the INT8 model for live play: `--weights weights/best_int8_openvino_model`.
+
+| per frame, Intel Core Ultra 5 226V CPU | before | now |
+|---|---|---|
+| detector | 107 ms (`best.pt`) | 30 ms (INT8 OpenVINO) |
+| card classifier | 37 ms every frame | ~0 ms (only re-runs on a slot whose crop changed) |
+| whole `run` on 90 frames, incl. JPEG decode + mp4 write | 4.0 fps | 11.0 fps |
+
+- **Live sources** (`/dev/videoN`, camera index, `adb`, `screen:`) are read on
+  a background thread, and each loop takes the newest frame. If processing
+  falls behind, old frames are dropped instead of queueing, so the overlay
+  stays in sync with the game. Pass `--all-frames` to process every frame.
+  Video files and folders still process every frame.
+- **Make your own fast model** from a `.pt` you trained:
+  `python -m clashcv export-det best.pt --data data/cr/data.yaml`. INT8 needs a
+  dataset to calibrate on; `--fp16` doesn't need one but is only ~1.4× faster.
+  The input shape matches the arena crop (640×416), not a square 640×640.
+- **GPU:** with a CUDA GPU, `best.pt --device 0` is fastest. OpenVINO can also
+  use Intel iGPUs and NPUs once Intel's GPU/NPU drivers are installed.
 
 ## Quick demo (no game files needed)
 
@@ -150,9 +173,10 @@ python -m clashcv train-cls data/cards_full --out weights/cards.pt --epochs 10 -
 To skip training, pass `--cards templates/`, a folder holding one
 `<card-name>.png` per card.
 
-**6. Run.**
+**6. Run.** Export your detector for speed first (see [Speed](#speed-live-play)).
 ```bash
-python -m clashcv run /dev/video2 --weights runs/detect/clash/weights/best.pt \
+python -m clashcv export-det runs/detect/clash/weights/best.pt --data data/synth/data.yaml
+python -m clashcv run /dev/video2 --weights runs/detect/clash/weights/best_int8_openvino_model \
     --cards weights/cards.pt --config my_screen.yaml --show
 # --save out.mp4 writes an overlay video; --ocr reads the clock
 # --play [--dry-run] lets the rule agent play through adb

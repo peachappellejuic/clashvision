@@ -115,3 +115,37 @@ def test_renderer_layouts(cfg):
     assert over.shape == (960, 432, 3)
     panels = Renderer(cfg, height=960, layout="panels").render(fake_frame(cfg, 6), st, [act], 0.5)
     assert panels.shape[0] == 960 and panels.shape[1] == 432 * 2 + 18 * (960 // 32)
+
+
+def test_card_classifier_only_reruns_on_changed_slots(tmp_path, cfg):
+    hand1 = ["hog-rider", "musketeer", "cannon", "ice-golem"]
+    hand2 = ["fireball", "musketeer", "cannon", "ice-golem"]
+    clf = _templates(tmp_path, cfg, hand1 + ["fireball"])
+    calls = []
+    predict = clf.predict
+    clf.predict = lambda crops: calls.append(len(crops)) or predict(crops)
+    per = Perceiver(cfg, card_classifier=clf)
+
+    assert per.step(fake_frame(cfg, 5, hand1))[0].hand == hand1
+    assert per.step(fake_frame(cfg, 5.2, hand1))[0].hand == hand1  # nothing changed: cached
+    st = per.step(fake_frame(cfg, 5.4, hand2))[0]                   # slot 0 replaced
+    assert st.hand == hand2
+    assert calls == [5, 1]
+
+
+def test_latest_frame_drops_stale_frames():
+    import time
+
+    from clashcv.capture import LatestFrame
+
+    def camera():  # 100 fps for 0.5 s
+        for i in range(50):
+            time.sleep(0.01)
+            yield i
+
+    got = []
+    for f in LatestFrame(camera()):
+        got.append(f)
+        time.sleep(0.05)  # slow consumer
+    assert got[-1] == 49 and len(got) < 25
+    assert got == sorted(set(got))

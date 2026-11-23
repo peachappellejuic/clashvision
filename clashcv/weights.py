@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 REPO = "peachappellejuic/clashvision"
@@ -21,6 +22,9 @@ WEIGHTS = {
                 "YOLOv8 arena detector, 212 classes (KataCR dataset)"),
     "cards.pt": ("d6291ed57e6fd99584b7fd2cad399c1cd1b880a4263f8d1c680bcc396bd412fb",
                  "ResNet18 hand-card classifier, 178 classes"),
+    # unzipped to weights/best_int8_openvino_model/ - ~3.5x faster detector on CPU
+    "best_int8_openvino_model.zip": ("605b4ccdf23043797e106cec16fbfe451127c68f471fae2ade2bf271c0aebcf7",
+                                     "OpenVINO INT8 detector for fast live inference"),
 }
 
 
@@ -71,7 +75,7 @@ def download(out: str | Path = "weights", force: bool = False) -> list[Path]:
         dst = out / name
         if dst.exists() and not force and _sha256(dst) == sha:
             print(f"{dst} already up to date")
-            paths.append(dst)
+            paths.append(_unpack(dst))
             continue
         try:
             if token:
@@ -99,5 +103,20 @@ def download(out: str | Path = "weights", force: bool = False) -> list[Path]:
             raise SystemExit(f"checksum mismatch for {name}: expected {sha}, got {got}")
         tmp.replace(dst)
         print(f"  saved {dst}")
-        paths.append(dst)
+        paths.append(_unpack(dst, force=True))
     return paths
+
+
+def _unpack(path: Path, force: bool = False) -> Path:
+    """Extract model-folder zips next to themselves; returns the usable path."""
+    if path.suffix != ".zip":
+        return path
+    folder = path.with_suffix("")
+    if force or not folder.is_dir():
+        with zipfile.ZipFile(path) as z:
+            for m in z.namelist():  # refuse paths escaping the weights folder
+                if Path(m).is_absolute() or ".." in Path(m).parts:
+                    raise SystemExit(f"unsafe path in {path}: {m}")
+            z.extractall(path.parent)
+        print(f"  extracted {folder}")
+    return folder

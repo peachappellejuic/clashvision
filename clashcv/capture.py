@@ -11,6 +11,7 @@ and then `open_source("/dev/video2")`.
 from __future__ import annotations
 
 import subprocess
+import threading
 from pathlib import Path
 from typing import Iterator, Protocol
 
@@ -90,14 +91,74 @@ class ScreenRegionSource:
                 yield cv2.cvtColor(np.asarray(sct.grab(self.mon)), cv2.COLOR_BGRA2BGR)
 
 
-def open_source(spec: str, stride: int = 1) -> FrameSource:
-    """`adb[:serial]`, `screen:x,y,w,h`, a folder, a video/device path, or a camera index."""
+class LatestFrame:
+    """Reads a live source on a background thread and yields only the newest frame.
+
+    Without this, frames queue up (in OpenCV's/v4l2's buffer, or while adb blocks)
+    whenever processing is slower than capture, and the output drifts further and
+    further behind the game. Here capture and processing overlap, and stale frames
+    are dropped, so what you see is always the current screen.
+    """
+
+    def __init__(self, source: FrameSource):
+        self.source = source
+
+    def __iter__(self):
+        cond = threading.Condition()
+        state = {"frame": None, "seq": 0, "done": False, "error": None}
+
+        def reader():
+            try:
+                for f in self.source:
+                    with cond:
+                        state["frame"], state["seq"] = f, state["seq"] + 1
+                        cond.notify()
+                        if state["done"]:
+                            return
+            except Exception as e:  # surfaced in the consumer
+                state["error"] = e
+            finally:
+                with cond:
+                    state["done"] = True
+                    cond.notify()
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        last = 0
+        try:
+            while True:
+                with cond:
+                    cond.wait_for(lambda: state["seq"] != last or state["done"])
+                    if state["seq"] == last:  # source ended with nothing new
+                        break
+                    frame, last = state["frame"], state["seq"]
+                yield frame
+            if state["error"] is not None:
+                raise state["error"]
+        finally:
+            with cond:
+                state["done"] = True
+
+
+def is_live(spec: str) -> bool:
+    return (spec.startswith(("adb", "screen:", "/dev/video")) or spec.isdigit())
+
+
+def open_source(spec: str, stride: int = 1, latest: bool | None = None) -> FrameSource:
+    """`adb[:serial]`, `screen:x,y,w,h`, a folder, a video/device path, or a camera index.
+
+    `latest` (default: on for live sources) drops stale frames; see `LatestFrame`.
+    """
     if spec.startswith("adb"):
-        return AdbScreencap(spec.split(":", 1)[1] if ":" in spec else None)
-    if spec.startswith("screen:"):
-        return ScreenRegionSource(*map(int, spec[7:].split(",")))
-    if spec.isdigit():
-        return VideoSource(int(spec), stride)
-    if Path(spec).is_dir():
-        return ImageFolderSource(spec)
-    return VideoSource(spec, stride)
+        src = AdbScreencap(spec.split(":", 1)[1] if ":" in spec else None)
+    elif spec.startswith("screen:"):
+        src = ScreenRegionSource(*map(int, spec[7:].split(",")))
+    elif spec.isdigit():
+        src = VideoSource(int(spec), stride)
+    elif Path(spec).is_dir():
+        src = ImageFolderSource(spec)
+    else:
+        src = VideoSource(spec, stride)
+    if latest is None:
+        latest = is_live(spec)
+    return LatestFrame(src) if latest else src

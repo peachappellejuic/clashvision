@@ -69,3 +69,28 @@ class ComboDetector:
                 if d.side == SIDE_UNKNOWN:  # model wasn't trained with side-tagged classes
                     d.side = infer_side(frame, d, h)
         return dets
+
+
+def arena_imgsz(cfg: ScreenConfig, frame_w: int = 1080, frame_h: int = 2400, long_side: int = 640,
+                stride: int = 32) -> tuple[int, int]:
+    """(h, w) network input matching the arena crop's shape. A square 640x640 input
+    wastes ~35% of the compute on padding for the tall arena."""
+    import math
+
+    x0, y0, x1, y1 = to_pixels(cfg.arena, frame_w, frame_h)
+    aw, ah = x1 - x0, y1 - y0
+    s = long_side / max(aw, ah)
+    return (math.ceil(ah * s / stride) * stride, math.ceil(aw * s / stride) * stride)
+
+
+def export_openvino(weights: str | Path, cfg: ScreenConfig, int8: bool = True,
+                    data: str | Path | None = None, fraction: float = 0.05,
+                    imgsz: tuple[int, int] | None = None) -> Path:
+    """Export a YOLO .pt to an OpenVINO model folder (INT8 needs a data.yaml to calibrate on)."""
+    from ultralytics import YOLO
+
+    if int8 and not data:
+        raise ValueError("INT8 export needs --data (a YOLO data.yaml) for calibration")
+    imgsz = imgsz or arena_imgsz(cfg)
+    kw = dict(int8=True, data=str(data), fraction=fraction) if int8 else dict(half=True)
+    return Path(YOLO(str(weights)).export(format="openvino", imgsz=list(imgsz), **kw))

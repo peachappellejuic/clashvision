@@ -151,7 +151,7 @@ def cmd_run(a):
     writer = None
     t0, n = time.time(), 0
     crop_box = tuple(map(int, a.crop.split(","))) if getattr(a, "crop", None) else None
-    for frame in open_source(a.source, a.stride):
+    for frame in open_source(a.source, a.stride, latest=False if getattr(a, "all_frames", False) else None):
         if n == 0:
             crop_box = crop_box or _auto_crop(frame)
             if crop_box:
@@ -224,6 +224,15 @@ def cmd_train_policy(a):
     n = len(json.loads(Path(a.classes).read_text())) if a.classes else len(DETECTION_CLASSES)
     train_dt(a.episodes, n, a.out, steps=a.steps, batch=a.batch, context=a.context, device=a.device)
     print(f"saved {a.out}")
+
+
+def cmd_export_det(a):
+    from .detection.detector import arena_imgsz, export_openvino
+
+    cfg = _cfg(a)
+    imgsz = tuple(map(int, a.imgsz.split(","))) if a.imgsz else arena_imgsz(cfg)
+    out = export_openvino(a.weights, cfg, int8=not a.fp16, data=a.data, fraction=a.fraction, imgsz=imgsz)
+    print(f"exported {out}  (input {imgsz[0]}x{imgsz[1]})  - use it with --weights {out}")
 
 
 def cmd_download_weights(a):
@@ -329,6 +338,8 @@ def main(argv=None):
     s.add_argument("--layout", choices=["overlay", "panels"], default="overlay",
                    help="panels = KataCR eval view: raw | labelled | state grid")
     s.add_argument("--height", type=int, default=960, help="output height in pixels")
+    s.add_argument("--all-frames", action="store_true",
+                   help="process every frame of a live source instead of skipping to the newest")
     s.add_argument("--play", action="store_true", help="let the rule agent play via adb")
     s.add_argument("--dry-run", action="store_true", help="agent decides but doesn't tap")
     s.add_argument("--serial")
@@ -350,6 +361,13 @@ def main(argv=None):
     s.add_argument("--classes"); s.add_argument("--steps", type=int, default=2000)
     s.add_argument("--batch", type=int, default=16); s.add_argument("--context", type=int, default=30)
     s.add_argument("--device", default="cpu")
+
+    s = add("export-det", cmd_export_det, "export the detector to OpenVINO (INT8/FP16) for ~3x faster CPU inference")
+    s.add_argument("weights", help="YOLO .pt")
+    s.add_argument("--data", help="data.yaml to calibrate INT8 on (e.g. data/cr/data.yaml)")
+    s.add_argument("--fp16", action="store_true", help="FP16 instead of INT8 (no data needed, ~1.4x)")
+    s.add_argument("--fraction", type=float, default=0.05, help="share of the train set used for calibration")
+    s.add_argument("--imgsz", help="h,w network input (default: matches the arena crop)")
 
     s = add("download-weights", cmd_download_weights, "download the pretrained detector + card classifier")
     s.add_argument("--out", default="weights"); s.add_argument("--force", action="store_true")
