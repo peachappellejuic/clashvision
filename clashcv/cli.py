@@ -226,6 +226,12 @@ def cmd_train_policy(a):
     print(f"saved {a.out}")
 
 
+def cmd_download_weights(a):
+    from .weights import download
+
+    download(a.out, force=a.force)
+
+
 def cmd_demo(a):
     import os
     import sys
@@ -344,6 +350,9 @@ def main(argv=None):
     s.add_argument("--classes"); s.add_argument("--steps", type=int, default=2000)
     s.add_argument("--batch", type=int, default=16); s.add_argument("--context", type=int, default=30)
     s.add_argument("--device", default="cpu")
+
+    s = add("download-weights", cmd_download_weights, "download the pretrained detector + card classifier")
+    s.add_argument("--out", default="weights"); s.add_argument("--force", action="store_true")
 
     s = add("demo", cmd_demo, "self-contained demo: builds fake assets, trains, and runs (no game files needed)")
     s.add_argument("--out", default="runs/demo", help="cache folder (reused on later runs)")

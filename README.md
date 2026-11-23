@@ -38,6 +38,24 @@ pip install -r requirements.txt
 pytest            # 20 tests, all procedural (no game assets needed)
 ```
 
+## Pretrained models (quickest start)
+
+```bash
+python -m clashcv download-weights      # -> weights/best.pt, weights/cards.pt (~70 MB, checksummed)
+python -m clashcv annotate match.mp4 labelled.mp4 --weights weights/best.pt --cards weights/cards.pt
+```
+
+| file | model | trained on | classes |
+|---|---|---|---|
+| `best.pt` | YOLOv8 arena detector | [KataCR dataset](https://github.com/wty-yy/Clash-Royale-Detection-Dataset) (~7k real frames) + synthetic, 100 epochs | 212 (≈106 units/towers/bars × ally/enemy). Val mAP50 0.973, mAP50-95 0.873 |
+| `cards.pt` | ResNet18 hand-card classifier | synthetic crops from card art + real crops of 11 cards | 178 (all 177 cards incl. evolutions + `empty`) |
+
+Limits: the detector only knows units in KataCR's dataset, so troops released
+since then aren't detected. Most cards in the classifier were learned from
+card art only, so check them on your own footage. The defaults assume a
+1080×2400 screen; run `calibrate` (step 2 below) if yours is different. To
+train your own models, follow the Workflow section.
+
 ## Quick demo (no game files needed)
 
 ```bash
